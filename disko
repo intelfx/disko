@@ -35,6 +35,8 @@ Options:
   where to mount the device tree (default: /mnt)
 * --dry-run
   just show the path to the script instead of running it
+* --to user@machine
+  (implies --dry-run) copy the script to the target machine with \`nix-copy-closure\`
 * --no-deps
   avoid adding another dependency closure to an in-memory installer
     requires all necessary dependencies to be available in the environment
@@ -92,6 +94,10 @@ while [[ $# -gt 0 ]]; do
     --show-trace)
       nix_args+=("$1")
       ;;
+    --to)
+      nix_copy_closure_to="$2"
+      shift
+      ;;
     *)
       if [ -z ${disko_config+x} ]; then
         disko_config=$1
@@ -145,7 +151,10 @@ script=$(nixBuild "${libexec_dir}"/cli.nix \
   --argstr mode "$mode" \
   "${nix_args[@]}"
 )
-if [[ -n "${dry_run+x}" ]]; then
+if [[ -n "${nix_copy_closure_to+x}" ]]; then
+  nix-copy-closure --gzip --include-outputs --use-substitutes --to "$nix_copy_closure_to" "$script"
+  echo "$script"
+elif [[ -n "${dry_run+x}" ]]; then
   echo "$script"
 else
   exec "$script"
