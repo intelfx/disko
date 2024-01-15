@@ -16,6 +16,11 @@
       type = diskoLib.optionTypes.absolute-pathname; # TODO check if subpath of /dev ? - No! eg: /.swapfile
       description = "Device path";
     };
+    erase = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Whether to attempt to erase the entire disk";
+    };
     imageSize = lib.mkOption {
       type = lib.types.strMatching "[0-9]+[KMGTP]?";
       description = ''
@@ -35,7 +40,14 @@
     };
     _create = diskoLib.mkCreateOption {
       inherit config options;
-      default = config.content._create;
+      default = ''
+        ${lib.optionalString config.erase ''
+          if [[ -b '${config.device}' ]]; then
+            blkdiscard --force --verbose '${config.device}'
+          fi
+        ''}
+      ${config.content._create}
+      '';
     };
     _mount = diskoLib.mkMountOption {
       inherit config options;
