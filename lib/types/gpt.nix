@@ -108,17 +108,20 @@ in
     _create = diskoLib.mkCreateOption {
       inherit config options;
       default = ''
-        ${lib.concatStrings (map (partition: ''
           sgdisk \
+        ${lib.concatStrings (map (partition: ''
             --align-end \
             --new=${toString partition._index}:${partition.start}:${partition.end} \
             --change-name=${toString partition._index}:${partition.label} \
             --typecode=${toString partition._index}:${partition.type} \
-            ${config.device}
+        '') sortedPartitions)}  ${config.device}
+
           # ensure /dev/disk/by-path/..-partN exists before continuing
           partprobe ${config.device}
           udevadm trigger --subsystem-match=block
           udevadm settle
+
+        ${lib.concatStrings (map (partition: ''
           ${lib.optionalString (partition.content != null) partition.content._create}
         '') sortedPartitions)}
 
