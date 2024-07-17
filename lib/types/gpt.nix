@@ -172,27 +172,38 @@ in
     _create = diskoLib.mkCreateOption {
       inherit config options;
       default = ''
+        declare -A part
+        declare -a sgdisk
         if ! blkid "${config.device}" >&2; then
-          sgdisk --clear ${config.device}
+          sgdisk+=(--clear)
+        else
+          while read -r dev nr start size; do
+            part["$nr"]="$dev"
+          done < <( \
+            sfdisk -d ${config.device} \
+            | sed -nr 's|^(.*([0-9]+)) : start= *([0-9]+), size= *([0-9]+).*|\1 \2 \3 \4|p' \
+          )
         fi
         ${lib.concatStrings (map (partition: ''
-          # try to create the partition, if it fails, try to change the type and name
-          if ! sgdisk \
+          # create the partition if it does not exist
+          # TODO: bail if partition geometry changed
+          if ! [[ ''${part[${toString partition._index}]+set} ]]; then sgdisk+=(
             --align-end ${lib.optionalString (partition.alignment != 0) ''--set-alignment=${builtins.toString partition.alignment}''} \
             --new=${toString partition._index}:${partition.start}:${partition.end} \
+          ); fi
+          # regardless, try to change the type and name
+          sgdisk+=(
             --change-name=${toString partition._index}:${partition.label} \
             --typecode=${toString partition._index}:${partition.type} \
-            ${config.device}
-          then sgdisk \
-            --change-name=${toString partition._index}:${partition.label} \
-            --typecode=${toString partition._index}:${partition.type} \
-            ${config.device}
-          fi
-          # ensure /dev/disk/by-path/..-partN exists before continuing
-          partprobe ${config.device} || : # sometimes partprobe fails, but the partitions are still up2date
-          udevadm trigger --subsystem-match=block
-          udevadm settle
+          )
         '') sortedPartitions)}
+
+        # apply all modifications at once
+        sgdisk "''${sgdisk[@]}" ${config.device}
+        # ensure /dev/disk/by-path/..-partN exists before continuing
+        partprobe ${config.device} || : # sometimes partprobe fails, but the partitions are still up2date
+        udevadm trigger --subsystem-match=block
+        udevadm settle
 
         ${
           lib.optionalString (sortedHybridPartitions != [])
@@ -248,6 +259,7 @@ in
       type = lib.types.functionTo (lib.types.listOf lib.types.package);
       default = pkgs:
         [
+          pkgs.util-linux
           pkgs.gptfdisk
           pkgs.systemdMinimal
           pkgs.parted # for partprobe
